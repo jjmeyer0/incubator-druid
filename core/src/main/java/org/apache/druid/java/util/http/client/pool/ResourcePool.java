@@ -19,11 +19,11 @@
 
 package org.apache.druid.java.util.http.client.pool;
 
+import com.github.benmanes.caffeine.cache.CacheLoader;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.java.util.common.logger.Logger;
@@ -35,7 +35,6 @@ import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -43,10 +42,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * all {@link ResourcePoolConfig#getMaxPerKey()} resources are initialized and cached in the {@link #pool}.
  * The individual resource in {@link ImmediateCreationResourceHolder} is valid while (current time - last access time)
  * <= {@link ResourcePoolConfig#getUnusedConnectionTimeoutMillis()}.
- *
+ * <p>
  * A resource is closed and reinitialized if {@link ResourceFactory#isGood} returns false or it's expired based on
  * {@link ResourcePoolConfig#getUnusedConnectionTimeoutMillis()}.
- *
+ * <p>
  * {@link ResourcePoolConfig#getMaxPerKey() is a hard limit for the max number of resources per cache entry. The total
  * number of resources in {@link ImmediateCreationResourceHolder} cannot be larger than the limit in any case.
  */
@@ -58,7 +57,7 @@ public class ResourcePool<K, V> implements Closeable
 
   public ResourcePool(final ResourceFactory<K, V> factory, final ResourcePoolConfig config)
   {
-    this.pool = CacheBuilder.newBuilder().build(
+    this.pool = Caffeine.newBuilder().build(
         new CacheLoader<K, ImmediateCreationResourceHolder<K, V>>()
         {
           @Override
@@ -86,13 +85,9 @@ public class ResourcePool<K, V> implements Closeable
       return null;
     }
 
-    final ImmediateCreationResourceHolder<K, V> holder;
-    try {
-      holder = pool.get(key);
-    }
-    catch (ExecutionException e) {
-      throw new RuntimeException(e);
-    }
+    final ImmediateCreationResourceHolder<K, V> holder = pool.get(key);
+    Preconditions.checkNotNull(holder, "pool.get(%s) returned null.", key);
+
     final V value = holder.get();
 
     return new ResourceContainer<V>()
@@ -160,9 +155,9 @@ public class ResourcePool<K, V> implements Closeable
     private final K key;
     private final ResourceFactory<K, V> factory;
     private final ArrayDeque<ResourceHolder<V>> resourceHolderList;
+    private final long unusedResourceTimeoutMillis;
     private int deficit = 0;
     private boolean closed = false;
-    private final long unusedResourceTimeoutMillis;
 
     private ImmediateCreationResourceHolder(
         int maxSize,

@@ -33,28 +33,27 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 
 @RunWith(Parameterized.class)
 public class LoadingCacheTest
 {
-  private static final ImmutableMap IMMUTABLE_MAP = ImmutableMap.of("key", "value");
+  private static final ImmutableMap<Object, Object> IMMUTABLE_MAP = ImmutableMap.of("key", "value");
+  private final LoadingCache<Object, Object> loadingCache;
+
+  public LoadingCacheTest(LoadingCache<Object, Object> loadingCache)
+  {
+    this.loadingCache = loadingCache;
+  }
 
   @Parameterized.Parameters
   public static Collection<Object[]> inputData()
   {
     return Arrays.asList(new Object[][]{
         {new OnHeapLoadingCache<>(4, 1000, null, null, null)},
-        {new OffHeapLoadingCache(0, 0L, 0L, 0L)}
-    });
-  }
-
-  private final LoadingCache loadingCache;
-
-  public LoadingCacheTest(LoadingCache loadingCache)
-  {
-    this.loadingCache = loadingCache;
+        {new OffHeapLoadingCache<>(0, 0L, 0L, 0L)},
+        {new CaffeineOnHeapLoadingCache<>(1000, null, null, null)},
+        });
   }
 
   @Before
@@ -86,28 +85,14 @@ public class LoadingCacheTest
   @Test
   public void testPut() throws ExecutionException
   {
-    loadingCache.get("key2", new Callable()
-    {
-      @Override
-      public Object call()
-      {
-        return "value2";
-      }
-    });
+    loadingCache.get("key2", () -> "value2");
     Assert.assertEquals("value2", loadingCache.getIfPresent("key2"));
   }
 
   @Test
   public void testInvalidate() throws ExecutionException
   {
-    loadingCache.get("key2", new Callable()
-    {
-      @Override
-      public Object call()
-      {
-        return "value2";
-      }
-    });
+    loadingCache.get("key2", () -> "value2");
     Assert.assertEquals("value2", loadingCache.getIfPresent("key2"));
     loadingCache.invalidate("key2");
     Assert.assertEquals(null, loadingCache.getIfPresent("key2"));
@@ -116,14 +101,7 @@ public class LoadingCacheTest
   @Test
   public void testInvalidateAll() throws ExecutionException
   {
-    loadingCache.get("key2", new Callable()
-    {
-      @Override
-      public Object call()
-      {
-        return "value2";
-      }
-    });
+    loadingCache.get("key2", () -> "value2");
     Assert.assertEquals("value2", loadingCache.getIfPresent("key2"));
     loadingCache.invalidateAll(Collections.singletonList("key2"));
     Assert.assertEquals(null, loadingCache.getIfPresent("key2"));
@@ -133,15 +111,8 @@ public class LoadingCacheTest
   public void testInvalidateAll1() throws ExecutionException
   {
     loadingCache.invalidateAll();
-    loadingCache.get("key2", new Callable()
-    {
-      @Override
-      public Object call()
-      {
-        return "value2";
-      }
-    });
-    Assert.assertEquals(loadingCache.getAllPresent(IMMUTABLE_MAP.keySet()), Collections.EMPTY_MAP);
+    loadingCache.get("key2", () -> "value2");
+    Assert.assertEquals(loadingCache.getAllPresent(IMMUTABLE_MAP.keySet()), Collections.emptyMap());
   }
 
   @Test
@@ -160,8 +131,16 @@ public class LoadingCacheTest
   public void testSerDeser() throws IOException
   {
     ObjectMapper mapper = new DefaultObjectMapper();
-    Assert.assertEquals(loadingCache, mapper.readerFor(LoadingCache.class).readValue(mapper.writeValueAsString(loadingCache)));
-    Assert.assertEquals(loadingCache.hashCode(), mapper.readerFor(LoadingCache.class).readValue(mapper.writeValueAsString(loadingCache)).hashCode());
+    Assert.assertEquals(
+        loadingCache,
+        mapper.readerFor(LoadingCache.class).readValue(mapper.writeValueAsString(loadingCache))
+    );
+    Assert.assertEquals(
+        loadingCache.hashCode(),
+        mapper.readerFor(LoadingCache.class)
+              .readValue(mapper.writeValueAsString(loadingCache))
+              .hashCode()
+    );
   }
 
 }

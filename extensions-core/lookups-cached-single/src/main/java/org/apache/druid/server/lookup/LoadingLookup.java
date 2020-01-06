@@ -36,9 +36,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Loading  lookup will load the key\value pair upon request on the key it self, the general algorithm is load key if absent.
- * Once the key/value  pair is loaded eviction will occur according to the cache eviction policy.
- * This module comes with two loading cache implementations, the first {@link org.apache.druid.server.lookup.cache.loading.OnHeapLoadingCache}is onheap backed by a Guava cache implementation, the second {@link org.apache.druid.server.lookup.cache.loading.OffHeapLoadingCache}is MapDB offheap implementation.
- * Both implementations offer various eviction strategies.
+ * Once the key/value pair is loaded eviction will occur according to the cache eviction policy.
+ * This module comes with three loading cache implementations, the first {@link org.apache.druid.server.lookup.cache.loading.OnHeapLoadingCache}
+ * is an on-heap backed by a Guava cache implementation. This cache implementation is deprecated. It is recommended to use
+ * {@link org.apache.druid.server.lookup.cache.loading.CaffeineOnHeapLoadingCache}. The second cache type, {@link org.apache.druid.server.lookup.cache.loading.OffHeapLoadingCache},
+ * is MapDB off-heap implementation, and the last type ias {@link org.apache.druid.server.lookup.cache.loading.CaffeineOnHeapLoadingCache},
+ * an on-heap cache implemenation backed by the Caffeine cacheing library.
+ *
+ * All three implementations offer various eviction strategies.
  */
 public class LoadingLookup extends LookupExtractor
 {

@@ -22,9 +22,10 @@ package org.apache.druid.server.lookup.cache.loading;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import io.netty.util.SuppressForbidden;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.google.common.util.concurrent.ExecutionError;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 import org.apache.druid.java.util.common.logger.Logger;
 
 import java.util.Map;
@@ -32,24 +33,16 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 
-/**
- * @deprecated Please use {@link CaffeineOnHeapLoadingCache} instead. This may be removed in a future major release.
- */
-@Deprecated
-public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
+public class CaffeineOnHeapLoadingCache<K, V> implements LoadingCache<K, V>
 {
-  private static final Logger log = new Logger(OnHeapLoadingCache.class);
+  private static final Logger log = new Logger(CaffeineOnHeapLoadingCache.class);
   private static final int DEFAULT_INITIAL_CAPACITY = 16;
-  //See com.google.common.cache.CacheBuilder#DEFAULT_CONCURRENCY_LEVEL
-  private static final int DEFAULT_CONCURRENCY_LEVEL = 4;
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   private final Cache<K, V> cache;
   private final AtomicBoolean isClosed = new AtomicBoolean(false);
-  @JsonProperty
-  private final int concurrencyLevel;
   @JsonProperty
   private final int initialCapacity;
   @JsonProperty
@@ -61,7 +54,6 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
 
 
   /**
-   * @param concurrencyLevel  default to {@code DEFAULT_CONCURRENCY_LEVEL}
    * @param initialCapacity   default to {@code DEFAULT_INITIAL_CAPACITY}
    * @param maximumSize       Max number of entries that the cache can hold, When set to zero, elements will be evicted immediately after being loaded into the
    *                          cache.
@@ -74,27 +66,22 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
    *                          has elapsed after the entry's creation, or the most recent replacement of its value.
    *                          No write-time-based eviction when set to null.
    */
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @JsonCreator
-  public OnHeapLoadingCache(
-      @JsonProperty("concurrencyLevel") int concurrencyLevel,
+  public CaffeineOnHeapLoadingCache(
       @JsonProperty("initialCapacity") int initialCapacity,
       @JsonProperty("maximumSize") Long maximumSize,
       @JsonProperty("expireAfterAccess") Long expireAfterAccess,
       @JsonProperty("expireAfterWrite") Long expireAfterWrite
   )
   {
-    this.concurrencyLevel = concurrencyLevel <= 0 ? DEFAULT_CONCURRENCY_LEVEL : concurrencyLevel;
     this.initialCapacity = initialCapacity <= 0 ? DEFAULT_INITIAL_CAPACITY : initialCapacity;
     this.maximumSize = maximumSize;
     this.expireAfterAccess = expireAfterAccess;
     this.expireAfterWrite = expireAfterWrite;
-    CacheBuilder builder = CacheBuilder.newBuilder()
-                                       .concurrencyLevel(this.concurrencyLevel)
-                                       .initialCapacity(this.initialCapacity)
-                                       .recordStats();
+    Caffeine<Object, Object> builder = Caffeine.newBuilder().initialCapacity(this.initialCapacity).recordStats();
+
     if (this.expireAfterAccess != null) {
-      builder.expireAfterAccess(expireAfterAccess, TimeUnit.MILLISECONDS);
+      builder.expireAfterAccess(this.expireAfterAccess, TimeUnit.MILLISECONDS);
     }
     if (this.expireAfterWrite != null) {
       builder.expireAfterWrite(this.expireAfterWrite, TimeUnit.MILLISECONDS);
@@ -106,54 +93,79 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
     this.cache = builder.build();
 
     if (isClosed.getAndSet(false)) {
-      log.info("Guava Based OnHeapCache started with spec [%s]", cache.toString());
+      log.info("Caffeine Based OnHeapCache started with spec [%s]", cache.toString());
     }
   }
 
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public V getIfPresent(K key)
   {
     return cache.getIfPresent(key);
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public void putAll(Map<? extends K, ? extends V> m)
   {
     cache.putAll(m);
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
+
   @Override
   public Map<K, V> getAllPresent(Iterable<K> keys)
   {
     return cache.getAllPresent(keys);
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public V get(K key, Callable<? extends V> valueLoader) throws ExecutionException
   {
-    return cache.get(key, valueLoader);
+    // The following seems like a hack and there may be a better way to do this. The reason this
+    // exception handling was implemented is that Caffeine's Cache#get call takes a function,
+    // but the previous cache being used (guava) expected a callable. Since Callable throws a
+    // checked exception and a Function does not, this extra work was done to stay true to the
+    // interface being implemented.
+    final Function<K, V> f = k -> {
+      try {
+        return valueLoader.call();
+      }
+      catch (final UncheckedExecutionException e) {
+        throw e;
+      }
+      catch (final RuntimeException e) {
+        throw new UncheckedExecutionException(e);
+      }
+      catch (final ExecutionException e) {
+        throw new WrapperExecutionException(e);
+      }
+      catch (final Exception e) {
+        throw new WrapperExecutionException(new ExecutionException(e));
+      }
+      catch (final Error e) {
+        throw new ExecutionError(e);
+      }
+    };
+
+    try {
+      return cache.get(key, f);
+    }
+    catch (final WrapperExecutionException e) {
+      throw e.getWrapped();
+    }
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public void invalidate(K key)
   {
     cache.invalidate(key);
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public void invalidateAll(Iterable<K> keys)
   {
     cache.invalidateAll(keys);
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public void invalidateAll()
   {
@@ -161,7 +173,6 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
     cache.cleanUp();
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public LookupCacheStats getStats()
   {
@@ -178,7 +189,6 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
     return isClosed.get();
   }
 
-  @SuppressForbidden(reason = "This class is deprecated, and may be removed in the future. It should be allowed to use Guava's cache to be used.")
   @Override
   public void close()
   {
@@ -194,15 +204,12 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
     if (this == o) {
       return true;
     }
-    if (!(o instanceof OnHeapLoadingCache)) {
+    if (!(o instanceof CaffeineOnHeapLoadingCache)) {
       return false;
     }
 
-    OnHeapLoadingCache<?, ?> that = (OnHeapLoadingCache<?, ?>) o;
+    CaffeineOnHeapLoadingCache<?, ?> that = (CaffeineOnHeapLoadingCache<?, ?>) o;
 
-    if (concurrencyLevel != that.concurrencyLevel) {
-      return false;
-    }
     if (initialCapacity != that.initialCapacity) {
       return false;
     }
@@ -221,11 +228,28 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
   @Override
   public int hashCode()
   {
-    int result = concurrencyLevel;
-    result = 31 * result + initialCapacity;
+    int result = initialCapacity;
     result = 31 * result + (maximumSize != null ? maximumSize.hashCode() : 0);
     result = 31 * result + (expireAfterAccess != null ? expireAfterAccess.hashCode() : 0);
     result = 31 * result + (expireAfterWrite != null ? expireAfterWrite.hashCode() : 0);
     return result;
+  }
+
+  // This is for internal use of this class. It is probably not a good idea to use this anywhere
+  // except where it is currently used.
+  private static class WrapperExecutionException extends RuntimeException
+  {
+    private final ExecutionException exception;
+
+    private WrapperExecutionException(final ExecutionException cause)
+    {
+      super(cause);
+      this.exception = cause;
+    }
+
+    private ExecutionException getWrapped()
+    {
+      return exception;
+    }
   }
 }

@@ -22,11 +22,11 @@ package org.apache.druid.server.coordination;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.AbstractFuture;
@@ -45,7 +45,6 @@ import org.apache.druid.server.SegmentManager;
 import org.apache.druid.timeline.DataSegment;
 
 import javax.annotation.Nullable;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -67,6 +66,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
+ *
  */
 @ManageLifecycle
 public class SegmentLoadDropHandler implements DataSegmentChangeHandler
@@ -86,18 +86,15 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
   private final SegmentManager segmentManager;
   private final ScheduledExecutorService exec;
   private final ConcurrentSkipListSet<DataSegment> segmentsToDelete;
-
-  private volatile boolean started = false;
-
   // Keep history of load/drop request status in a LRU cache to maintain idempotency if same request shows up
   // again and to return status of a completed request. Maximum size of this cache must be significantly greater
   // than number of pending load/drop requests. so that history is not lost too quickly.
   private final Cache<DataSegmentChangeRequest, AtomicReference<Status>> requestStatuses;
   private final Object requestStatusesLock = new Object();
-
   // This is the list of unresolved futures returned to callers of processBatch(List<DataSegmentChangeRequest>)
   // Threads loading/dropping segments resolve these futures as and when some segment load/drop finishes.
   private final LinkedHashSet<CustomSettableFuture> waitingFutures = new LinkedHashSet<>();
+  private volatile boolean started = false;
 
   @Inject
   public SegmentLoadDropHandler(
@@ -140,7 +137,7 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
     this.exec = exec;
     this.segmentsToDelete = new ConcurrentSkipListSet<>();
 
-    requestStatuses = CacheBuilder.newBuilder().maximumSize(config.getStatusQueueMaxSize()).initialCapacity(8).build();
+    requestStatuses = Caffeine.newBuilder().maximumSize(config.getStatusQueueMaxSize()).initialCapacity(8).build();
   }
 
   @LifecycleStart
@@ -252,7 +249,8 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
    *
    * @throws SegmentLoadingException if it fails to load the given segment
    */
-  private void loadSegment(DataSegment segment, DataSegmentChangeCallback callback, boolean lazy) throws SegmentLoadingException
+  private void loadSegment(DataSegment segment, DataSegmentChangeCallback callback, boolean lazy)
+      throws SegmentLoadingException
   {
     final boolean loaded;
     try {
@@ -736,17 +734,11 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
 
   public static class Status
   {
-    public enum STATE
-    {
-      SUCCESS, FAILED, PENDING
-    }
-
+    public static final Status SUCCESS = new Status(STATE.SUCCESS, null);
+    public static final Status PENDING = new Status(STATE.PENDING, null);
     private final STATE state;
     @Nullable
     private final String failureCause;
-
-    public static final Status SUCCESS = new Status(STATE.SUCCESS, null);
-    public static final Status PENDING = new Status(STATE.PENDING, null);
 
     @JsonCreator
     Status(
@@ -784,6 +776,11 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
              "state=" + state +
              ", failureCause='" + failureCause + '\'' +
              '}';
+    }
+
+    public enum STATE
+    {
+      SUCCESS, FAILED, PENDING
     }
   }
 

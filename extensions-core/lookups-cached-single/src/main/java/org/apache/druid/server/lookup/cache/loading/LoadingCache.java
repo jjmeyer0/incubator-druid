@@ -46,6 +46,7 @@ import java.util.concurrent.ExecutionException;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes(value = {
     @JsonSubTypes.Type(name = "guava", value = OnHeapLoadingCache.class),
+    @JsonSubTypes.Type(name = "caffeine", value = CaffeineOnHeapLoadingCache.class),
     @JsonSubTypes.Type(name = "mapDb", value = OffHeapLoadingCache.class)
 })
 public interface LoadingCache<K, V> extends Closeable

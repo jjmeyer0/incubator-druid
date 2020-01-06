@@ -113,9 +113,11 @@ This example demonstrates an off-heap lookup that will be cached once and never 
 |reverseLoadingCacheSpec|JSON Object| Reverse lookup cache  implementation|yes |null|
 
 
-##### Example Loading On-heap Guava
+<!-- TODO: Update docs to include caffeine. -->
+##### Example Loading On-heap Guava (Deprecated)
 
-Guava cache configuration spec.
+Guava cache configuration spec. This cache is deprecated and may be removed in a future major release. Please use
+on-heap Caffeine backed cache.
 
 |Field|Type|Description|Required|default|
 |-----|----|-----------|--------|-------|
@@ -131,6 +133,26 @@ Guava cache configuration spec.
    "dataFetcher":{ "type":"jdbcDataFetcher", "connectorConfig":"jdbc://mysql://localhost:3306/my_data_base", "table":"lookup_table_name", "keyColumn":"key_column_name", "valueColumn": "value_column_name"},
    "loadingCacheSpec":{"type":"guava"},
    "reverseLoadingCacheSpec":{"type":"guava", "maximumSize":500000, "expireAfterAccess":100000, "expireAfterAccess":10000}
+}
+```
+
+##### Example Loading On-heap Caffeine
+
+Caffeine cache configuration spec. This should be used over the On-heap Guava cache.
+
+|Field|Type|Description|Required|default|
+|-----|----|-----------|--------|-------|
+|initialCapacity|int|Initial capacity size|no |null|
+|maximumSize|long| Specifies the maximum number of entries the cache may contain.|no |null (infinite capacity)|
+|expireAfterAccess|long| Specifies the eviction time after last read in milliseconds.|no |null (No read-time-based eviction when set to null)|
+|expireAfterWrite|long| Specifies the eviction time after last write in milliseconds.|no |null (No write-time-based eviction when set to null)|
+
+```json
+{
+   "type":"loadingLookup",
+   "dataFetcher":{ "type":"jdbcDataFetcher", "connectorConfig":"jdbc://mysql://localhost:3306/my_data_base", "table":"lookup_table_name", "keyColumn":"key_column_name", "valueColumn": "value_column_name"},
+   "loadingCacheSpec":{"type":"caffeine"},
+   "reverseLoadingCacheSpec":{"type":"caffeine", "maximumSize":500000, "expireAfterAccess":100000, "expireAfterAccess":10000}
 }
 ```
 

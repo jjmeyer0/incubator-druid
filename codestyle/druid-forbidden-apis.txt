@@ -2,6 +2,10 @@ com.fasterxml.jackson.databind.ObjectMapper#reader(com.fasterxml.jackson.core.ty
 com.fasterxml.jackson.databind.ObjectMapper#reader(com.fasterxml.jackson.databind.JavaType) @ Use ObjectMapper#readerFor instead
 com.fasterxml.jackson.databind.ObjectMapper#reader(java.lang.Class) @ Use ObjectMapper#readerFor instead
 com.google.common.base.Charsets @ Use java.nio.charset.StandardCharsets instead
+com.google.common.cache.Cache @ Use com.github.benmanes.caffeine.cache.Cache instead
+com.google.common.cache.CacheBuilder @ Use com.github.benmanes.caffeine.cache.Caffeine instead
+com.google.common.cache.CacheLoader @ Use com.github.benmanes.caffeine.cache.CacheLoader instead
+com.google.common.cache.LoadingCache @ Use com.github.benmanes.caffeine.cache.LoadingCache instead
 com.google.common.collect.Iterators#emptyIterator() @ Use java.util.Collections#emptyIterator()
 com.google.common.collect.Lists#newArrayList() @ Create java.util.ArrayList directly
 com.google.common.collect.Lists#newLinkedList() @ Use ArrayList or ArrayDeque instead
