@@ -22,6 +22,7 @@ package org.apache.druid.server.lookup;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import org.apache.druid.common.config.NullHandling;
+import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.server.lookup.cache.loading.LoadingCache;
 import org.apache.druid.testing.InitializedNullHandlingTest;
 import org.easymock.EasyMock;
@@ -30,8 +31,7 @@ import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 
 public class LoadingLookupTest extends InitializedNullHandlingTest
 {
@@ -41,9 +41,9 @@ public class LoadingLookupTest extends InitializedNullHandlingTest
   LoadingLookup loadingLookup = new LoadingLookup(dataFetcher, lookupCache, reverseLookupCache);
 
   @Test
-  public void testApplyEmptyOrNull() throws ExecutionException
+  public void testApplyEmptyOrNull()
   {
-    EasyMock.expect(lookupCache.get(EasyMock.eq(""), EasyMock.anyObject(Callable.class)))
+    EasyMock.expect(lookupCache.get(EasyMock.eq(""), EasyMock.anyObject(Function.class)))
             .andReturn("empty").atLeastOnce();
     EasyMock.replay(lookupCache);
     Assert.assertEquals("empty", loadingLookup.apply(""));
@@ -67,22 +67,25 @@ public class LoadingLookupTest extends InitializedNullHandlingTest
   }
 
   @Test
-  public void testApply() throws ExecutionException
+  public void testApply()
   {
-    EasyMock.expect(lookupCache.get(EasyMock.eq("key"), EasyMock.anyObject(Callable.class))).andReturn("value").once();
+    EasyMock.expect(lookupCache.get(EasyMock.eq("key"), EasyMock.anyObject(Function.class))).andReturn("value").once();
     EasyMock.replay(lookupCache);
     Assert.assertEquals(ImmutableMap.of("key", "value"), loadingLookup.applyAll(ImmutableSet.of("key")));
     EasyMock.verify(lookupCache);
   }
 
   @Test
-  public void testUnapplyAll() throws ExecutionException
+  public void testUnapplyAll()
   {
-    EasyMock.expect(reverseLookupCache.get(EasyMock.eq("value"), EasyMock.anyObject(Callable.class)))
+    EasyMock.expect(reverseLookupCache.get(EasyMock.eq("value"), EasyMock.anyObject(Function.class)))
             .andReturn(Collections.singletonList("key"))
             .once();
     EasyMock.replay(reverseLookupCache);
-    Assert.assertEquals(ImmutableMap.of("value", Collections.singletonList("key")), loadingLookup.unapplyAll(ImmutableSet.of("value")));
+    Assert.assertEquals(
+        ImmutableMap.of("value", Collections.singletonList("key")),
+        loadingLookup.unapplyAll(ImmutableSet.of("value"))
+    );
     EasyMock.verify(reverseLookupCache);
   }
 
@@ -97,10 +100,10 @@ public class LoadingLookupTest extends InitializedNullHandlingTest
   }
 
   @Test
-  public void testApplyWithExecutionError() throws ExecutionException
+  public void testApplyWithExecutionError()
   {
-    EasyMock.expect(lookupCache.get(EasyMock.eq("key"), EasyMock.anyObject(Callable.class)))
-            .andThrow(new ExecutionException(null))
+    EasyMock.expect(lookupCache.get(EasyMock.eq("key"), EasyMock.anyObject(Function.class)))
+            .andThrow(new ISE(null))
             .once();
     EasyMock.replay(lookupCache);
     Assert.assertNull(loadingLookup.apply("key"));
@@ -108,10 +111,10 @@ public class LoadingLookupTest extends InitializedNullHandlingTest
   }
 
   @Test
-  public void testUnApplyWithExecutionError() throws ExecutionException
+  public void testUnApplyWithExecutionError()
   {
-    EasyMock.expect(reverseLookupCache.get(EasyMock.eq("value"), EasyMock.anyObject(Callable.class)))
-            .andThrow(new ExecutionException(null))
+    EasyMock.expect(reverseLookupCache.get(EasyMock.eq("value"), EasyMock.anyObject(Function.class)))
+            .andThrow(new ISE(null))
             .once();
     EasyMock.replay(reverseLookupCache);
     Assert.assertEquals(Collections.emptyList(), loadingLookup.unapply("value"));

@@ -24,12 +24,11 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.google.common.util.concurrent.UncheckedExecutionException;
+import com.google.common.base.Preconditions;
+import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.logger.Logger;
 
 import java.util.Map;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -119,37 +118,27 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
   }
 
   @Override
-  public V get(K key, Callable<? extends V> valueLoader) throws ExecutionException
+  public V get(final K key, final Function<K, V> valueLoader)
   {
-    // The following seems like a hack and there may be a better way to do this. The reason this
-    // exception handling was implemented is that Caffeine's Cache#get call takes a function,
-    // but the previous cache being used (guava) expected a callable. Since Callable throws a
-    // checked exception and a Function does not, this extra work was done to stay true to the
-    // interface being implemented.
-    final Function<K, V> f = k -> {
-      try {
-        return valueLoader.call();
-      }
-      catch (final UncheckedExecutionException e) {
-        throw e;
-      }
-      catch (final RuntimeException e) {
-        throw new UncheckedExecutionException(e);
-      }
-      catch (final ExecutionException e) {
-        throw new WrapperExecutionException(e);
-      }
-      catch (final Exception e) {
-        throw new WrapperExecutionException(new ExecutionException(e));
-      }
-    };
+    Preconditions.checkNotNull(key, "The provided key cannot be null.");
+    Preconditions.checkNotNull(valueLoader, "The provided function cannot be null.");
 
+    final V v;
     try {
-      return cache.get(key, f);
+      v = cache.get(key, valueLoader);
     }
-    catch (final WrapperExecutionException e) {
-      throw e.getWrapped();
+    catch (final RuntimeException e) {
+      throw new ISE(e, "An exception occurred while loading key [%s]", key);
     }
+
+    if (v == null) {
+      // caffeine allows nulls to be returned, but it doesn't seem to add null to the cache. Meaning if
+      // a key, k1, doesn't exist and the valueLoader returns null, null is not added to the cache and
+      // subsequent calls will call valueLoader as k1 will not be in the cache.
+      throw new ISE("The provided value for key [%s] is null. Null values are not allowed.", key);
+    }
+
+    return v;
   }
 
   @Override
@@ -231,23 +220,5 @@ public class OnHeapLoadingCache<K, V> implements LoadingCache<K, V>
     result = 31 * result + (expireAfterAccess != null ? expireAfterAccess.hashCode() : 0);
     result = 31 * result + (expireAfterWrite != null ? expireAfterWrite.hashCode() : 0);
     return result;
-  }
-
-  // This is for internal use of this class. It is probably not a good idea to use this anywhere
-  // except where it is currently used.
-  private static class WrapperExecutionException extends RuntimeException
-  {
-    private final ExecutionException exception;
-
-    private WrapperExecutionException(final ExecutionException cause)
-    {
-      super(cause);
-      this.exception = cause;
-    }
-
-    private ExecutionException getWrapped()
-    {
-      return exception;
-    }
   }
 }

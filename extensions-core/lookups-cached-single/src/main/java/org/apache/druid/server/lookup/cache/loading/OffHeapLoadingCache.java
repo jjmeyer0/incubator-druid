@@ -21,6 +21,7 @@ package org.apache.druid.server.lookup.cache.loading;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import org.apache.druid.java.util.common.ISE;
 import org.mapdb.Bind;
@@ -30,10 +31,10 @@ import org.mapdb.HTreeMap;
 
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 public class OffHeapLoadingCache<K, V> implements LoadingCache<K, V>
 {
@@ -131,19 +132,22 @@ public class OffHeapLoadingCache<K, V> implements LoadingCache<K, V>
   }
 
   @Override
-  public V get(K key, final Callable<? extends V> valueLoader)
+  public V get(final K key, final Function<K, V> valueLoader)
   {
+    Preconditions.checkNotNull(key, "The provided key cannot be null.");
+    Preconditions.checkNotNull(valueLoader, "The provided function cannot be null.");
+
     synchronized (key) {
       V value = cache.get(key);
       if (value != null) {
         return value;
       }
       try {
-        value = valueLoader.call();
+        value = valueLoader.apply(key);
         cache.put(key, value);
         return value;
       }
-      catch (Exception e) {
+      catch (RuntimeException e) {
         throw new ISE(e, "got an exception while loading key [%s]", key);
       }
     }

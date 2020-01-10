@@ -22,6 +22,7 @@ package org.apache.druid.server.lookup.cache.loading;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import org.apache.druid.jackson.DefaultObjectMapper;
+import org.apache.druid.java.util.common.ISE;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -33,7 +34,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.concurrent.ExecutionException;
+import java.util.Map;
 
 @RunWith(Parameterized.class)
 public class LoadingCacheTest
@@ -52,7 +53,6 @@ public class LoadingCacheTest
     return Arrays.asList(new Object[][]{
         {new OnHeapLoadingCache<>(4, 1000, null, null, null)},
         {new OffHeapLoadingCache<>(0, 0L, 0L, 0L)},
-        {new CaffeineOnHeapLoadingCache<>(1000, null, null, null)},
         });
   }
 
@@ -83,35 +83,35 @@ public class LoadingCacheTest
   }
 
   @Test
-  public void testPut() throws ExecutionException
+  public void testPut()
   {
-    loadingCache.get("key2", () -> "value2");
+    loadingCache.get("key2", (k) -> "value2");
     Assert.assertEquals("value2", loadingCache.getIfPresent("key2"));
   }
 
   @Test
-  public void testInvalidate() throws ExecutionException
+  public void testInvalidate()
   {
-    loadingCache.get("key2", () -> "value2");
+    loadingCache.get("key2", (k) -> "value2");
     Assert.assertEquals("value2", loadingCache.getIfPresent("key2"));
     loadingCache.invalidate("key2");
     Assert.assertEquals(null, loadingCache.getIfPresent("key2"));
   }
 
   @Test
-  public void testInvalidateAll() throws ExecutionException
+  public void testInvalidateAll()
   {
-    loadingCache.get("key2", () -> "value2");
+    loadingCache.get("key2", (k) -> "value2");
     Assert.assertEquals("value2", loadingCache.getIfPresent("key2"));
     loadingCache.invalidateAll(Collections.singletonList("key2"));
     Assert.assertEquals(null, loadingCache.getIfPresent("key2"));
   }
 
   @Test
-  public void testInvalidateAll1() throws ExecutionException
+  public void testInvalidateAll1()
   {
     loadingCache.invalidateAll();
-    loadingCache.get("key2", () -> "value2");
+    loadingCache.get("key2", (k) -> "value2");
     Assert.assertEquals(loadingCache.getAllPresent(IMMUTABLE_MAP.keySet()), Collections.emptyMap());
   }
 
@@ -143,4 +143,56 @@ public class LoadingCacheTest
     );
   }
 
+  @Test
+  public void checkNullFunctionReturnIsntCached()
+  {
+    final String key = "k1";
+    final String value = "v";
+    try {
+      loadingCache.get(key, (k) -> null);
+    }
+    catch (final ISE ignore) {
+    }
+
+    final Map<Object, Object> m = loadingCache.getAllPresent(Collections.singleton(key));
+
+    Assert.assertTrue(m.isEmpty());
+    Assert.assertEquals(value, loadingCache.get(key, (k) -> value));
+
+    final Map<Object, Object> m2 = loadingCache.getAllPresent(Collections.singleton(key));
+    Assert.assertFalse(m2.isEmpty());
+
+  }
+
+  @Test(expected = ISE.class)
+  public void validateRuntimeThrownAsUnchecked()
+  {
+    loadingCache.get("k1", (k) -> {
+      throw new NullPointerException();
+    });
+  }
+
+  @Test(expected = ISE.class)
+  public void validateExecutionExceptionRethrown()
+  {
+    loadingCache.get("k1", (k) -> {
+      throw new IllegalStateException();
+    });
+  }
+
+  @Test(expected = ISE.class)
+  public void validateExceptionThrownAsExecutionException()
+  {
+    loadingCache.get("k1", (k) -> {
+      throw new RuntimeException();
+    });
+  }
+
+  @Test(expected = Error.class)
+  public void validateErrorRethrownAsExecutionError()
+  {
+    loadingCache.get("k1", (k) -> {
+      throw new Error();
+    });
+  }
 }

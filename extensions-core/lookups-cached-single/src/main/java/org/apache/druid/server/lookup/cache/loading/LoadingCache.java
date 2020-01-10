@@ -21,25 +21,22 @@ package org.apache.druid.server.lookup.cache.loading;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.google.common.cache.CacheLoader;
-import com.google.common.util.concurrent.ExecutionError;
-import com.google.common.util.concurrent.UncheckedExecutionException;
+import org.apache.druid.java.util.common.ISE;
 
 import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.util.Map;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 
 /**
  * A semi-persistent mapping from keys to values. Cache entries are added using
- * {@link #get(Object, Callable)} and stored in the cache until either evicted or manually invalidated.
+ * {@link #get(Object, Function)} and stored in the cache until either evicted or manually invalidated.
  * <p>
  * <p>Implementations of this interface are expected to be thread-safe, and can be safely accessed
  * by multiple concurrent threads.
- *
- * This interface borrows ideas (and in some cases methods and javadoc) from Guava and JCache cache interface.
- * Thanks Guava and JSR !
+ * <p>
+ * This interface borrows ideas (and in some cases methods and javadoc) from Guava, Caffeine, and JCache cache interface.
+ * Thanks Guava, Caffeine, and JSR!
  * We elected to make this as close as possible to JSR API like that users can build bridges between all the existing implementations of JSR.
  */
 
@@ -52,7 +49,7 @@ public interface LoadingCache<K, V> extends Closeable
 {
   /**
    * @param key must not be null
-   * Returns the value associated with {@code key} in this cache, or {@code null} if there is no
+   * @return the value associated with {@code key} in this cache, or {@code null} if there is no
    * cached value for {@code key}.
    * a cache miss should be counted if the key is missing.
    */
@@ -63,24 +60,26 @@ public interface LoadingCache<K, V> extends Closeable
    * Returns a map of the values associated with {@code keys} in this cache. The returned map will
    * only contain entries which are already present in the cache.
    */
-
   Map<K, V> getAllPresent(Iterable<K> keys);
 
   /**
-   * Returns the value associated with {@code key} in this cache, obtaining that value from
-   * {@code valueLoader} if necessary. No observable state associated with this cache is modified
-   * until loading completes.
+   * Returns the value associated with the {@code key} in this cache, obtaining that value from the
+   * {@code valueLoader} if necessary. This method provides a simple substitute for the
+   * conventional "if cached, return; otherwise create, cache and return" pattern.
+   * <p>
+   * If the specified key is not already associated with a value, attempts to compute its value
+   * using the given mapping function and enters it into this cache unless {@code null}. The entire
+   * method invocation is performed atomically, so the function is applied at most once per key.
+   * Some attempted update operations on this cache by other threads may be blocked while the
+   * computation is in progress, so the computation should be short and simple, and must not attempt
+   * to update any other mappings of this cache.
+   * <p>
+   * <b>Warning:</b> {@code valueLoader} <b>must not</b> attempt to update any other mappings of this cache.
    *
-   * <p><b>Warning:</b> as with {@link CacheLoader#load}, {@code valueLoader} <b>must not</b> return
-   * {@code null}; it may either return a non-null value or throw an exception.
-   *
-   * @throws ExecutionException if a checked exception was thrown while loading the value
-   * @throws UncheckedExecutionException if an unchecked exception was thrown while loading the
-   *     value
-   * @throws ExecutionError if an error was thrown while loading the value
-   *
+   * @throws ISE                  if an issue occurs when getting/loading a value from the cache, or if the value retrieved is null.
+   * @throws NullPointerException if {@code key} or {@code valueLoader} is null.
    */
-  V get(K key, Callable<? extends V> valueLoader) throws ExecutionException;
+  V get(K key, Function<K, V> valueLoader);
 
   /**
    * Copies all of the mappings from the specified map to the cache. This method is used for bulk put.
@@ -113,7 +112,6 @@ public interface LoadingCache<K, V> extends Closeable
 
   /**
    * @return Stats of the cache.
-   *
    * @throws IllegalStateException if the cache is {@link #isClosed()}
    */
   LookupCacheStats getStats();
@@ -127,7 +125,6 @@ public interface LoadingCache<K, V> extends Closeable
    * Clean the used resources of the cache. Still not sure about cache lifecycle but as an initial design
    * the namespace deletion event should call this method to clean up resources.
    */
-
   @Override
   void close();
 }

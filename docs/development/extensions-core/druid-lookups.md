@@ -62,7 +62,7 @@ Loading cache strategy will load the key/value pair upon request on the key it s
 Once the key/value  pair is loaded eviction will occur according to the cache eviction policy.
 This module comes with two loading lookup implementation, the first is on-heap backed by a Guava cache implementation, the second is MapDB off-heap implementation.
 Both implementations offer various eviction strategies.
-Same for Loading cache, developer can implement a new type of loading cache by implementing `LookupLoadingCache` interface.
+Same for Loading cache, developer can implement a new type of loading cache by implementing `LoadingCache` interface.
 
 ## Configuration and Operation:
 
@@ -130,7 +130,7 @@ On-heap cache configuration spec. This cache uses the [Caffeine](https://github.
    "type":"loadingLookup",
    "dataFetcher":{ "type":"jdbcDataFetcher", "connectorConfig":"jdbc://mysql://localhost:3306/my_data_base", "table":"lookup_table_name", "keyColumn":"key_column_name", "valueColumn": "value_column_name"},
    "loadingCacheSpec":{"type":"guava"},
-   "reverseLoadingCacheSpec":{"type":"guava", "maximumSize":500000, "expireAfterAccess":100000, "expireAfterAccess":10000}
+   "reverseLoadingCacheSpec":{"type":"guava", "maximumSize":500000, "expireAfterAccess":100000, "expireAfterWrite":10000}
 }
 ```
 
@@ -151,6 +151,6 @@ Off heap cache is backed by [MapDB](http://www.mapdb.org/) implementation. MapDB
    "type":"loadingLookup",
    "dataFetcher":{ "type":"jdbcDataFetcher", "connectorConfig":"jdbc://mysql://localhost:3306/my_data_base", "table":"lookup_table_name", "keyColumn":"key_column_name", "valueColumn": "value_column_name"},
    "loadingCacheSpec":{"type":"mapDb", "maxEntriesSize":100000},
-   "reverseLoadingCacheSpec":{"type":"mapDb", "maxStoreSize":5, "expireAfterAccess":100000, "expireAfterAccess":10000}
+   "reverseLoadingCacheSpec":{"type":"mapDb", "maxStoreSize":5, "expireAfterAccess":100000, "expireAfterWrite":10000}
 }
 ```

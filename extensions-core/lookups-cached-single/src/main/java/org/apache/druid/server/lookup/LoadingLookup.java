@@ -22,6 +22,7 @@ package org.apache.druid.server.lookup;
 
 import com.google.common.base.Preconditions;
 import org.apache.druid.common.config.NullHandling;
+import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.query.lookup.LookupExtractor;
 import org.apache.druid.server.lookup.cache.loading.LoadingCache;
@@ -30,9 +31,10 @@ import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 /**
  * Loading lookup will load the key/value pair upon request on the key it self, the general algorithm is load key if
@@ -76,10 +78,11 @@ public class LoadingLookup extends LookupExtractor
 
     final String presentVal;
     try {
-      presentVal = loadingCache.get(keyEquivalent, new ApplyCallable(keyEquivalent));
+      presentVal = loadingCache.get(keyEquivalent, new ApplyFunction());
       return NullHandling.emptyToNullIfNeeded(presentVal);
     }
-    catch (ExecutionException e) {
+    // This changes functionality. We will now handle all exceptions (except NPE) from both guava and mapdb.
+    catch (final ISE e) {
       LOGGER.debug("value not found for key [%s]", key);
       return null;
     }
@@ -97,10 +100,11 @@ public class LoadingLookup extends LookupExtractor
     }
     final List<String> retList;
     try {
-      retList = reverseLoadingCache.get(valueEquivalent, new UnapplyCallable(valueEquivalent));
+      retList = reverseLoadingCache.get(valueEquivalent, new UnapplyFunction());
       return retList;
     }
-    catch (ExecutionException e) {
+    // This changes functionality. We will now handle all exceptions (except NPE) from both guava and mapdb.
+    catch (final ISE e) {
       LOGGER.debug("list of keys not found for value [%s]", value);
       return Collections.emptyList();
     }
@@ -124,56 +128,6 @@ public class LoadingLookup extends LookupExtractor
     return LookupExtractionModule.getRandomCacheKey();
   }
 
-  private class ApplyCallable implements Callable<String>
-  {
-    private final String key;
-
-    public ApplyCallable(String key)
-    {
-      this.key = key;
-    }
-
-    @Override
-    public String call()
-    {
-      // When SQL compatible null handling is disabled,
-      // avoid returning null and return an empty string to cache it.
-      return NullHandling.nullToEmptyIfNeeded(dataFetcher.fetch(key));
-    }
-  }
-
-  public synchronized void close()
-  {
-    if (isOpen.getAndSet(false)) {
-      LOGGER.info("Closing loading cache [%s]", id);
-      loadingCache.close();
-      reverseLoadingCache.close();
-    } else {
-      LOGGER.info("Closing already closed lookup");
-    }
-  }
-
-  public boolean isOpen()
-  {
-    return isOpen.get();
-  }
-
-  private class UnapplyCallable implements Callable<List<String>>
-  {
-    private final String value;
-
-    public UnapplyCallable(String value)
-    {
-      this.value = value;
-    }
-
-    @Override
-    public List<String> call()
-    {
-      return dataFetcher.reverseFetchKeys(value);
-    }
-  }
-
   @Override
   public String toString()
   {
@@ -181,5 +135,26 @@ public class LoadingLookup extends LookupExtractor
            "dataFetcher=" + dataFetcher +
            ", id='" + id + '\'' +
            '}';
+  }
+
+  private class ApplyFunction implements UnaryOperator<String>
+  {
+    @Override
+    public String apply(final String key)
+    {
+      // When SQL compatible null handling is disabled,
+      // avoid returning null and return an empty string to cache it.
+      return NullHandling.nullToEmptyIfNeeded(dataFetcher.fetch(key));
+    }
+  }
+
+  private class UnapplyFunction implements Function<String, List<String>>
+  {
+
+    @Override
+    public List<String> apply(final String key)
+    {
+      return dataFetcher.reverseFetchKeys(key);
+    }
   }
 }

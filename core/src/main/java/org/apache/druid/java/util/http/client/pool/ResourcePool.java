@@ -85,7 +85,6 @@ public class ResourcePool<K, V> implements Closeable
       return null;
     }
 
-    // TODO: maybe we should wrap this in a runtime? Actually that doesn't make sense? Are we okay with changing the type of exception thrown by the poo?
     final ImmediateCreationResourceHolder<K, V> holder = pool.get(key);
     Preconditions.checkNotNull(holder, "pool.get(%s) returned null.", key);
 
