@@ -19,16 +19,62 @@
 
 package org.apache.druid.server.lookup.cache.loading;
 
+import com.google.common.util.concurrent.UncheckedExecutionException;
+import org.easymock.EasyMock;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.concurrent.ExecutionException;
+
 public class OnHeapLoadingCacheTest
 {
+  private final LoadingCache<Object, Object> cache = new OnHeapLoadingCache<>(4, 1000, 10000L, 10000L, 10000L);
+
   @Test
   public void testIsClosed()
   {
-    OnHeapLoadingCache onHeapLookupLoadingCache = new OnHeapLoadingCache(4, 15, 100L, 10L, 10L);
+    OnHeapLoadingCache<Object, Object> onHeapLookupLoadingCache = new OnHeapLoadingCache<>(4, 15, 100L, 10L, 10L);
     onHeapLookupLoadingCache.close();
     Assert.assertTrue(onHeapLookupLoadingCache.isClosed());
+  }
+
+  @Test(expected = UncheckedExecutionException.class)
+  public void validateUncheckedRethrown() throws Exception
+  {
+    cache.get("k1", () -> {
+      throw new UncheckedExecutionException(EasyMock.mock(Exception.class));
+    });
+  }
+
+  @Test(expected = UncheckedExecutionException.class)
+  public void validateRuntimeThrownAsUnchecked() throws Exception
+  {
+    cache.get("k1", () -> {
+      throw new RuntimeException();
+    });
+  }
+
+  @Test(expected = ExecutionException.class)
+  public void validateExecutionExceptionRethrown() throws Exception
+  {
+    cache.get("k1", () -> {
+      throw new ExecutionException(EasyMock.mock(Exception.class));
+    });
+  }
+
+  @Test(expected = ExecutionException.class)
+  public void validateExceptionThrownAsExecutionException() throws Exception
+  {
+    cache.get("k1", () -> {
+      throw new Exception();
+    });
+  }
+
+  @Test(expected = Error.class)
+  public void validateErrorRethrownAsExecutionError() throws Exception
+  {
+    cache.get("k1", () -> {
+      throw new Error();
+    });
   }
 }

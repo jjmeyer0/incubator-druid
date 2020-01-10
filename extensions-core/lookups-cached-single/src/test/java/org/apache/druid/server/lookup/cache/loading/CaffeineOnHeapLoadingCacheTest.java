@@ -21,12 +21,12 @@ package org.apache.druid.server.lookup.cache.loading;
 
 import com.google.common.util.concurrent.ExecutionError;
 import com.google.common.util.concurrent.UncheckedExecutionException;
+import org.easymock.EasyMock;
 import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.concurrent.ExecutionException;
 
-import static org.easymock.EasyMock.mock;
 
 public class CaffeineOnHeapLoadingCacheTest
 {
@@ -44,7 +44,7 @@ public class CaffeineOnHeapLoadingCacheTest
   public void validateUncheckedRethrown() throws Exception
   {
     cache.get("k1", () -> {
-      throw new UncheckedExecutionException(mock(Exception.class));
+      throw new UncheckedExecutionException(EasyMock.mock(Exception.class));
     });
   }
 
@@ -60,7 +60,7 @@ public class CaffeineOnHeapLoadingCacheTest
   public void validateExecutionExceptionRethrown() throws Exception
   {
     cache.get("k1", () -> {
-      throw new ExecutionException(mock(Exception.class));
+      throw new ExecutionException(EasyMock.mock(Exception.class));
     });
   }
 
