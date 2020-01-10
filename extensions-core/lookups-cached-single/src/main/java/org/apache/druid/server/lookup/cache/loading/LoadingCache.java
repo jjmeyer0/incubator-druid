@@ -79,7 +79,7 @@ public interface LoadingCache<K, V> extends Closeable
    * @throws ISE                  if an issue occurs when getting/loading a value from the cache, or if the value retrieved is null.
    * @throws NullPointerException if {@code key} or {@code valueLoader} is null.
    */
-  V get(K key, Function<K, V> valueLoader);
+  V get(K key, Function<? super K, ? extends V> valueLoader);
 
   /**
    * Copies all of the mappings from the specified map to the cache. This method is used for bulk put.

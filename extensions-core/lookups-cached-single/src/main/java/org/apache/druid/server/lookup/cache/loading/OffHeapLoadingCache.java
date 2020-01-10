@@ -132,7 +132,7 @@ public class OffHeapLoadingCache<K, V> implements LoadingCache<K, V>
   }
 
   @Override
-  public V get(final K key, final Function<K, V> valueLoader)
+  public V get(final K key, final Function<? super K, ? extends V> valueLoader)
   {
     Preconditions.checkNotNull(key, "The provided key cannot be null.");
     Preconditions.checkNotNull(valueLoader, "The provided function cannot be null.");
