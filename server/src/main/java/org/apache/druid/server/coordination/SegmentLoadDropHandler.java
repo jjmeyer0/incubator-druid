@@ -86,15 +86,18 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
   private final SegmentManager segmentManager;
   private final ScheduledExecutorService exec;
   private final ConcurrentSkipListSet<DataSegment> segmentsToDelete;
+
+  private volatile boolean started = false;
+
   // Keep history of load/drop request status in a LRU cache to maintain idempotency if same request shows up
   // again and to return status of a completed request. Maximum size of this cache must be significantly greater
   // than number of pending load/drop requests. so that history is not lost too quickly.
   private final Cache<DataSegmentChangeRequest, AtomicReference<Status>> requestStatuses;
   private final Object requestStatusesLock = new Object();
+
   // This is the list of unresolved futures returned to callers of processBatch(List<DataSegmentChangeRequest>)
   // Threads loading/dropping segments resolve these futures as and when some segment load/drop finishes.
   private final LinkedHashSet<CustomSettableFuture> waitingFutures = new LinkedHashSet<>();
-  private volatile boolean started = false;
 
   @Inject
   public SegmentLoadDropHandler(
@@ -249,8 +252,7 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
    *
    * @throws SegmentLoadingException if it fails to load the given segment
    */
-  private void loadSegment(DataSegment segment, DataSegmentChangeCallback callback, boolean lazy)
-      throws SegmentLoadingException
+  private void loadSegment(DataSegment segment, DataSegmentChangeCallback callback, boolean lazy) throws SegmentLoadingException
   {
     final boolean loaded;
     try {
@@ -734,11 +736,17 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
 
   public static class Status
   {
-    public static final Status SUCCESS = new Status(STATE.SUCCESS, null);
-    public static final Status PENDING = new Status(STATE.PENDING, null);
+    public enum STATE
+    {
+      SUCCESS, FAILED, PENDING
+    }
+
     private final STATE state;
     @Nullable
     private final String failureCause;
+
+    public static final Status SUCCESS = new Status(STATE.SUCCESS, null);
+    public static final Status PENDING = new Status(STATE.PENDING, null);
 
     @JsonCreator
     Status(
@@ -776,11 +784,6 @@ public class SegmentLoadDropHandler implements DataSegmentChangeHandler
              "state=" + state +
              ", failureCause='" + failureCause + '\'' +
              '}';
-    }
-
-    public enum STATE
-    {
-      SUCCESS, FAILED, PENDING
     }
   }
 
